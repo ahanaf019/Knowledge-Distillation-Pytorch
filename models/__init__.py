@@ -1,0 +1,2 @@
+from models.resnet_model import ResNetModel
+from models.mobilenet_model import MobileNetModel

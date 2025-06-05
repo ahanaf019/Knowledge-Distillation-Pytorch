@@ -1,2 +1,1 @@
 from datasets.classification_dataset import ClassificationDataset
-from datasets.contrastive_dataset import ContrastiveDataset

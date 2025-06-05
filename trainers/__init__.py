@@ -1,1 +1,2 @@
 from trainers.classification_trainer import ClassifcationTrainer
+from trainers.distiller import Distiller

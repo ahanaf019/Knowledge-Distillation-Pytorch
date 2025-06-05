@@ -5,6 +5,7 @@ import torch.nn as nn
 import random
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 
 def show_tensor_image(tensor, title=None, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
@@ -77,6 +78,7 @@ def save_state(save_path: str, model: nn.Module, optim: torch.optim.Optimizer, i
         'info': info
     }
     try:
+        os.makedirs('/'.join(save_path.split('/')[:-1]), exist_ok=True)
         torch.save(state_dict, save_path)
         print(f'State saved.')
         # print('Info:', info)
@@ -110,8 +112,6 @@ def get_images_and_labels(db_path, limit_per_class=20, val_split=0.2, shuffle_se
     train_labels_list = []
     val_images_list = []
     val_labels_list = []
-    unsup_images_list = []
-    unsup_labels_list = []
 
     for _class in classes:
         random.seed(random_state)
@@ -130,9 +130,7 @@ def get_images_and_labels(db_path, limit_per_class=20, val_split=0.2, shuffle_se
 
         train_images_list += images[:limit_per_class]
         train_labels_list += labels[:limit_per_class]
-        unsup_images_list += images
-        unsup_labels_list += labels
 
-        if print_info:
-            print(len(images), len(train_images_list), len(val_images_list), len(images[val_count: ]))
-    return train_images_list, train_labels_list, val_images_list, val_labels_list, unsup_images_list, unsup_labels_list
+    if print_info:
+        print('Train Images:', len(train_images_list), 'Val Images:', len(val_images_list))
+    return train_images_list, train_labels_list, val_images_list, val_labels_list

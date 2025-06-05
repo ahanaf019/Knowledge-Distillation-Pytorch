@@ -11,13 +11,15 @@ from torchmetrics import ConfusionMatrix
 from utils.utils import save_state, load_state
 from datasets import ClassificationDataset
 
-class ClassifcationTrainer:
-    def __init__(self, model: nn.Module, optim: torch.optim, loss_fn: nn.Module, num_classes:int, device:str='cpu'):
-        self.model = model
-        self.optim = optim
+class Distiller:
+    def __init__(self, teacher: nn.Module, student: nn.Module, optim: torch.optim, loss_fn: nn.Module, eval_loss_fn: nn.Module, num_classes:int, device:str='cpu'):
+        self.teacher_model = teacher
+        self.student_model = student
         self.loss_fn = loss_fn
-        self.device = device
+        self.eval_loss_fn = eval_loss_fn
+        self.optim = optim
         self.num_classes = num_classes
+        self.device = device
 
         self.conf = ConfusionMatrix(task='multiclass',num_classes=num_classes).to(device)
         self.metrics = [
@@ -30,6 +32,7 @@ class ClassifcationTrainer:
 
 
     def fit(self, num_epochs, train_db: ClassificationDataset, val_db: ClassificationDataset, batch_size, early_stop_patience=30, checkpoint_path=f'checkpoints/model.pt'):
+        self.teacher_model.eval()
         train_loader = DataLoader(train_db, batch_size=batch_size, shuffle=True, num_workers=os.cpu_count())
         val_loader = DataLoader(val_db, batch_size=batch_size, shuffle=False, num_workers=2)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optim, T_max=num_epochs)
@@ -48,7 +51,7 @@ class ClassifcationTrainer:
             es_counter += 1
             if val_loss < min(val_losses):
                 print(f'val_loss improved from {np.min(val_losses):0.4f} to {val_loss:0.4f}')
-                save_state(checkpoint_path, self.model, self.optim)
+                save_state(checkpoint_path, self.student_model, self.optim)
                 es_counter = 0
             if es_counter >= early_stop_patience:
                 print('Early Stopping')
@@ -56,12 +59,12 @@ class ClassifcationTrainer:
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
-        self.model, self.optim = load_state(checkpoint_path, self.model, self.optim)
+        self.student_model, self.optim = load_state(checkpoint_path, self.student_model, self.optim)
 
 
 
     def train_epoch(self, loader: DataLoader):
-        self.model.train()
+        self.student_model.train()
         losses = []
 
         for images, labels in tqdm(loader):
@@ -69,8 +72,11 @@ class ClassifcationTrainer:
             labels = labels.to(self.device)
             self.optim.zero_grad()
 
-            outputs = self.model(images)
-            loss = self.loss_fn(outputs, labels)
+            student_preds = self.student_model(images)
+            with torch.inference_mode():
+                teacher_preds = self.teacher_model(images)
+            loss = self.loss_fn(teacher_preds, student_preds, labels)
+
             losses.append(loss.item())
             loss.backward()
             self.optim.step()
@@ -81,7 +87,7 @@ class ClassifcationTrainer:
 
 
     def evaluate(self, loader: DataLoader, conf=False, use_progress_bar=True):
-        self.model.eval()
+        self.student_model.eval()
         losses = []
 
         self.conf.reset()
@@ -96,8 +102,8 @@ class ClassifcationTrainer:
             for images, labels in data_iter:
                 images = images.to(self.device)
                 labels = labels.to(self.device)
-                outputs = self.model(images)
-                loss = self.loss_fn(outputs, labels)
+                outputs = self.student_model(images)
+                loss = self.eval_loss_fn(outputs, labels)
                 losses.append(loss.item())
 
                 for metric in self.metrics:

@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 from typing import Callable
 from utils.utils import read_image
-from config import *
+
 
 class ClassificationDataset(Dataset):
     def __init__(self,images, labels, image_size,  db_path_root=None, augments: Callable=None, transforms: Callable=None):
