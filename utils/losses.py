@@ -8,12 +8,12 @@ class DistillationLoss(nn.Module):
         self.temperature = temperature
 
         self.student_loss_fn = nn.CrossEntropyLoss()
-        self.div_loss = nn.KLDivLoss()
+        self.div_loss = nn.KLDivLoss(reduce='batchmean')
     
     def forward(self, teacher_preds, student_preds, labels):
         student_loss = self.student_loss_fn(student_preds, labels)
         distillation_loss = self.div_loss(
-            F.softmax(teacher_preds / self.temperature, dim=1),
+            F.log_softmax(teacher_preds / self.temperature, dim=1),
             F.softmax(student_preds / self.temperature, dim=1),
         ) * (self.temperature**2)
         return self.alpha * student_loss + (1 - self.alpha) * distillation_loss
