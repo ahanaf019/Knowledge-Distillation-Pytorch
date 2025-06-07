@@ -57,11 +57,11 @@ def main():
     teacher_model, _ = load_state('checkpoints/teacher.pt', teacher_model, None)
     student_model = MobileNetModel(num_classes=NUM_CLASSES).to(device)
     infosummary(student_model, (1, 3, IMAGE_SIZE, IMAGE_SIZE), col_names=["input_size", "output_size", "num_params", "params_percent", "trainable"])
-    distill(teacher_model, student_model)
+    distill(teacher_model, student_model, checkpoint_path='checkpoints/distilled.pt')
 
 
 
-def train_model(model, checkpoint_path):
+def train_model(model: nn.Module, checkpoint_path: str):
     train_path = f'{DB_PATH}/train/'
     train_images, train_labels, val_images, val_labels = get_images_and_labels(train_path, limit_per_class=IMAGE_LIMIT_PER_CLASS, val_split=0.1, shuffle_seed=123, print_info=True)
     
@@ -89,7 +89,7 @@ def train_model(model, checkpoint_path):
     trainer.evaluate(test_loader, conf=False)
 
 
-def distill(teacher_model, student_model):
+def distill(teacher_model: nn.Module, student_model: nn.Module, checkpoint_path):
     train_path = f'{DB_PATH}/train/'
     train_images, train_labels, val_images, val_labels = get_images_and_labels(train_path, limit_per_class=IMAGE_LIMIT_PER_CLASS, val_split=0.1, shuffle_seed=123, print_info=True)
     
@@ -98,7 +98,7 @@ def distill(teacher_model, student_model):
 
     
     optim = torch.optim.AdamW(student_model.parameters(), lr=INIT_LEARNING_RATE, weight_decay=1e-2)
-    loss_fn = DistillationLoss()
+    loss_fn = DistillationLoss(alpha=ALPHA, temperature=TEMPERATURE)
 
     distiller = Distiller(
         teacher=teacher_model,
@@ -109,7 +109,7 @@ def distill(teacher_model, student_model):
         num_classes=NUM_CLASSES, 
         device=device
     )
-    distiller.fit(NUM_EPOCHS, train_db, val_db, BATCH_SIZE, checkpoint_path='checkpoints/distilled.pt')
+    distiller.fit(NUM_EPOCHS, train_db, val_db, BATCH_SIZE, checkpoint_path=checkpoint_path)
 
     print('*'*30)
     print('Testing')
@@ -119,7 +119,7 @@ def distill(teacher_model, student_model):
 
     test_db = ClassificationDataset(test_images, test_labels, IMAGE_SIZE, augments=None, transforms=_transforms)
     test_loader = DataLoader(test_db, batch_size=32, shuffle=False, num_workers=2)
-    student_model, optim = load_state(f'./checkpoints/distilled.pt', student_model, optim)
+    student_model, optim = load_state(checkpoint_path, student_model, optim)
     distiller.evaluate(test_loader, conf=False)
 
 
