@@ -24,14 +24,21 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 augments = A.Compose([
     A.D4(),
-    A.AutoContrast(),
+    # A.AutoContrast(),
     A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.7),
-    A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+    # A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+])
+
+train_transforms = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.RandAugment(num_ops=3, magnitude=7),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=IMAGE_NORM_MEANS, std=IMAGE_NORM_STD),
 ])
 
 _transforms = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize(mean=IMAGE_NORM_MEANS, std=IMAGE_NORM_STD)
+    transforms.Normalize(mean=IMAGE_NORM_MEANS, std=IMAGE_NORM_STD),
 ])
 
 
@@ -43,6 +50,7 @@ def main():
 
     # Configs loaded from config.py
     train_model(model, checkpoint_path='checkpoints/teacher.pt')
+
 
 
     # 2. Train student model from scratch
@@ -65,7 +73,7 @@ def train_model(model: nn.Module, checkpoint_path: str):
     train_path = f'{DB_PATH}/train/'
     train_images, train_labels, val_images, val_labels = get_images_and_labels(train_path, limit_per_class=IMAGE_LIMIT_PER_CLASS, val_split=0.1, shuffle_seed=123, print_info=True)
     
-    train_db = ClassificationDataset(train_images, train_labels, IMAGE_SIZE, db_path_root=train_path, augments=augments, transforms=_transforms)
+    train_db = ClassificationDataset(train_images, train_labels, IMAGE_SIZE, db_path_root=train_path, augments=augments, transforms=train_transforms)
     val_db = ClassificationDataset(val_images, val_labels, IMAGE_SIZE, augments=None, transforms=_transforms)
 
 
@@ -85,7 +93,7 @@ def train_model(model: nn.Module, checkpoint_path: str):
 
     test_db = ClassificationDataset(test_images, test_labels, IMAGE_SIZE, augments=None, transforms=_transforms)
     test_loader = DataLoader(test_db, batch_size=32, shuffle=False, num_workers=2)
-    model, optim = load_state(f'./checkpoints/student.pt', model, optim)
+    model, optim = load_state(checkpoint_path, model, optim)
     trainer.evaluate(test_loader, conf=False)
 
 
@@ -93,11 +101,11 @@ def distill(teacher_model: nn.Module, student_model: nn.Module, checkpoint_path)
     train_path = f'{DB_PATH}/train/'
     train_images, train_labels, val_images, val_labels = get_images_and_labels(train_path, limit_per_class=IMAGE_LIMIT_PER_CLASS, val_split=0.1, shuffle_seed=123, print_info=True)
     
-    train_db = ClassificationDataset(train_images, train_labels, IMAGE_SIZE, db_path_root=train_path, augments=augments, transforms=_transforms)
+    train_db = ClassificationDataset(train_images, train_labels, IMAGE_SIZE, db_path_root=train_path, augments=augments, transforms=train_transforms)
     val_db = ClassificationDataset(val_images, val_labels, IMAGE_SIZE, augments=None, transforms=_transforms)
 
     
-    optim = torch.optim.AdamW(student_model.parameters(), lr=INIT_LEARNING_RATE, weight_decay=1e-2)
+    optim = torch.optim.AdamW(student_model.parameters(), lr=DISTILLATION_LR, weight_decay=1e-2)
     loss_fn = DistillationLoss(alpha=ALPHA, temperature=TEMPERATURE)
 
     distiller = Distiller(
@@ -109,7 +117,7 @@ def distill(teacher_model: nn.Module, student_model: nn.Module, checkpoint_path)
         num_classes=NUM_CLASSES, 
         device=device
     )
-    distiller.fit(NUM_EPOCHS, train_db, val_db, BATCH_SIZE, checkpoint_path=checkpoint_path)
+    distiller.fit(DISTILLATION_EPOCHS, train_db, val_db, BATCH_SIZE, checkpoint_path=checkpoint_path, early_stop_patience=DISTILLATION_EPOCHS)
 
     print('*'*30)
     print('Testing')

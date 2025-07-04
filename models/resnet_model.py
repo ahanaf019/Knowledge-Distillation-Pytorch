@@ -3,7 +3,7 @@ import torch.nn as nn
 import torchvision
 
 class ResNetModel(nn.Module):
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes=10, dropout_rate=0.2):
         super().__init__()
         backbone = torchvision.models.resnet50(torchvision.models.ResNet50_Weights.IMAGENET1K_V2)
 
@@ -22,6 +22,7 @@ class ResNetModel(nn.Module):
             nn.Linear(2048, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(inplace=True),
+            # nn.Dropout(dropout_rate),
             nn.Linear(512, num_classes)
         )
     

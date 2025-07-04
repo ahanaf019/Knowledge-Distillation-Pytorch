@@ -36,6 +36,8 @@ class Distiller:
         train_loader = DataLoader(train_db, batch_size=batch_size, shuffle=True, num_workers=os.cpu_count())
         val_loader = DataLoader(val_db, batch_size=batch_size, shuffle=False, num_workers=2)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optim, T_max=num_epochs)
+        self.scaler = torch.amp.grad_scaler.GradScaler()
+
         train_losses = []
         val_losses = [np.inf]
 
@@ -72,14 +74,19 @@ class Distiller:
             labels = labels.to(self.device)
             self.optim.zero_grad()
 
-            student_preds = self.student_model(images)
             with torch.inference_mode():
                 teacher_preds = self.teacher_model(images)
-            loss = self.loss_fn(teacher_preds, student_preds, labels)
+                teacher_preds.requires_grad = False
+            
+            with torch.autocast(device_type=self.device):
+                student_preds = self.student_model(images)
+            
+                loss = self.loss_fn(teacher_preds, student_preds, labels)
 
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optim)
+            self.scaler.update()
             losses.append(loss.item())
-            loss.backward()
-            self.optim.step()
 
         print(f'Train Loss: {np.mean(losses):0.4f}')
         return np.mean(losses)
